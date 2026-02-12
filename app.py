@@ -15,9 +15,20 @@ if not TARGET_BASE_URL:
 def webhook_proxy():
     try:
         target_url = f"{TARGET_BASE_URL.rstrip('/')}/{TARGET_ENDPOINT.lstrip('/')}"
-        headers = {
-            key: value for key, value in request.headers if key.lower() != "host"
-        }
+
+        # Preserve all original headers except host
+        headers = {}
+        for key, value in request.headers:
+            if key.lower() != "host":
+                headers[key] = value
+
+        # Ensure Content-Type is set for JSON payloads
+        if not headers.get("Content-Type"):
+            headers["Content-Type"] = "application/json"
+
+        # Add X-GitHub-Event header if not present (needed for Coolify)
+        if not headers.get("X-GitHub-Event") and not headers.get("x-github-event"):
+            headers["X-GitHub-Event"] = "push"
 
         response = requests.post(
             target_url, headers=headers, data=request.get_data(), timeout=30
