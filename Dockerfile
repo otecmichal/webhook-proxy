@@ -1,5 +1,14 @@
 FROM python:3.12-slim
 
+# Install debugging tools
+RUN apt-get update && apt-get install -y \
+    curl \
+    iputils-ping \
+    dnsutils \
+    net-tools \
+    telnet \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 COPY requirements.txt .
