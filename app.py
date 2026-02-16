@@ -20,6 +20,7 @@ app = Flask(__name__)
 
 TARGET_BASE_URL = os.environ.get("TARGET_BASE_URL")
 TARGET_ENDPOINT = os.environ.get("TARGET_ENDPOINT", "/webhook")
+SECRET = os.environ.get("SECRET", "")
 
 if not TARGET_BASE_URL:
     raise ValueError("TARGET_BASE_URL environment variable is required")
@@ -59,6 +60,15 @@ def webhook_proxy():
         for key, value in request.headers:
             if key.lower() != "host":
                 headers[key] = value
+
+        # Strip signature headers if no secret is configured
+        if not SECRET:
+            signature_headers = [k for k in headers if "signature" in k.lower()]
+            for h in signature_headers:
+                del headers[h]
+                logger.info(
+                    f"[{request_id}] Stripped header: {h} (no SECRET configured)"
+                )
 
         # Ensure Content-Type is set for JSON payloads
         if not headers.get("Content-Type"):
