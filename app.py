@@ -2,6 +2,8 @@ import os
 import sys
 import json
 import logging
+import hmac
+import hashlib
 import requests
 from flask import Flask, request, jsonify
 
@@ -11,7 +13,6 @@ logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     handlers=[
         logging.StreamHandler(sys.stdout),
-        logging.FileHandler("/app/webhook-proxy.log"),
     ],
 )
 logger = logging.getLogger(__name__)
@@ -55,20 +56,31 @@ def webhook_proxy():
         target_url = f"{TARGET_BASE_URL.rstrip('/')}/{TARGET_ENDPOINT.lstrip('/')}"
         logger.info(f"[{request_id}] Target URL: {target_url}")
 
+        # Get body first (needed for signature)
+        body = request.get_data()
+
         # Preserve all original headers except host
         headers = {}
         for key, value in request.headers:
             if key.lower() != "host":
                 headers[key] = value
 
-        # Strip signature headers if no secret is configured
-        if not SECRET:
-            signature_headers = [k for k in headers if "signature" in k.lower()]
-            for h in signature_headers:
-                del headers[h]
-                logger.info(
-                    f"[{request_id}] Stripped header: {h} (no SECRET configured)"
-                )
+        # Handle signature headers - re-sign with target secret if configured
+        signature_headers = [k for k in headers if "signature" in k.lower()]
+        for h in signature_headers:
+            del headers[h]
+            logger.info(f"[{request_id}] Removed original signature header: {h}")
+
+        # Re-sign payload with target secret if configured
+        if SECRET:
+            # Generate HMAC-SHA256 signature (standard for GitHub/Coolify webhooks)
+            signature = hmac.new(
+                SECRET.encode("utf-8"), body, hashlib.sha256
+            ).hexdigest()
+            headers["X-Hub-Signature-256"] = f"sha256={signature}"
+            logger.info(
+                f"[{request_id}] Added X-Hub-Signature-256 header with target secret"
+            )
 
         # Ensure Content-Type is set for JSON payloads
         if not headers.get("Content-Type"):
@@ -85,9 +97,6 @@ def webhook_proxy():
                 logger.info(f"[{request_id}] {key}: [REDACTED]")
             else:
                 logger.info(f"[{request_id}] {key}: {value}")
-
-        # Get and log body
-        body = request.get_data()
         logger.info(f"[{request_id}] --- REQUEST BODY ---")
         try:
             # Try to parse as JSON for better logging
@@ -136,4 +145,4 @@ def health():
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=80)
+    app.run(host="0.0.0.0", port=8080)
